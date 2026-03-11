@@ -1,4 +1,65 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Emireq Mobile View
+
+A **Next.js 16 + React 19 + TypeScript 5 + Tailwind CSS v4** mobile-view web application with icon support via Lucide & React Icons, and data charts via Recharts.
+
+---
+
+## Tech Stack
+
+### Core Framework & Runtime
+
+| Technology | Version | Purpose |
+|---|---|---|
+| **Next.js** | 16.1.6 | React framework with App Router, SSR/SSG, routing |
+| **React** | 19.2.3 | UI component library |
+| **React DOM** | 19.2.3 | React renderer for the browser |
+| **Node.js** | ≥20 | Runtime environment |
+
+### Language & Type System
+
+| Technology | Version | Purpose |
+|---|---|---|
+| **TypeScript** | ^5 | Statically typed JavaScript, strict mode enabled |
+| **ES2017** target | — | TypeScript compile target |
+| **JSX** (react-jsx) | — | Component syntax transform |
+
+### Styling
+
+| Technology | Version | Purpose |
+|---|---|---|
+| **Tailwind CSS** | ^4 | Utility-first CSS framework |
+| **@tailwindcss/postcss** | ^4 | PostCSS integration for Tailwind v4 |
+| **PostCSS** | — | CSS transformation pipeline |
+| **globals.css** | — | Global base styles |
+
+### UI & Icon Libraries
+
+| Technology | Version | Purpose |
+|---|---|---|
+| **lucide-react** | ^0.577.0 | Modern SVG icon set (used throughout components) |
+| **react-icons** | ^5.6.0 | Large multi-source icon library |
+
+### Data Visualization
+
+| Technology | Version | Purpose |
+|---|---|---|
+| **Recharts** | ^3.7.0 | Chart & graph components built on D3 (used in Investors/Marketplace pages) |
+
+### Linting & Code Quality
+
+| Technology | Version | Purpose |
+|---|---|---|
+| **ESLint** | ^9 | JavaScript/TypeScript linter |
+| **eslint-config-next** | 16.1.6 | Next.js ESLint rules + Core Web Vitals + TypeScript rules |
+
+### Project Architecture
+
+- **App Router** — Next.js 13+ file-based routing under `app/`
+- **Component-based** — Reusable components in `components/`
+- **Path alias** `@/*` — Maps to the project root for clean imports
+- **Unoptimized images** — `next/image` with `unoptimized: true` for static/local asset serving
+
+---
 
 ## Getting Started
 
