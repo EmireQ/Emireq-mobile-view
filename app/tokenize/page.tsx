@@ -1,13 +1,12 @@
 ﻿import Navbar from "@/components/Navbar";
-import MainContent from "@/components/MainContent";
+import TokenizeContent from "@/components/TokenizeContent";
 
-export default function Home() {
+export default function TokenizePage() {
   return (
     <div className="min-h-screen bg-white flex justify-center items-start">
       <div className="w-full max-w-[430px] bg-white min-h-screen sm:shadow-2xl sm:shadow-gray-400/30 relative">
         <Navbar />
-        <MainContent />
-        <div className="h-8" />
+        <TokenizeContent />
       </div>
     </div>
   );
