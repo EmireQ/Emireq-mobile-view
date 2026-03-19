@@ -44,6 +44,9 @@ const ROUTES: Record<string, string> = {
   overview: "/investors",
   profile: "/investors/profile",
   portfolio: "/investors/portfolio",
+  token: "/investors/token",
+  analytics: "/investors/analytics",
+  documents: "/investors/documents",
 };
 
 export default function Sidebar({ open, onClose, defaultActive = "overview" }: SidebarProps) {
