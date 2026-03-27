@@ -195,7 +195,7 @@ export default function StartupsSidebar({ open, onClose, defaultActive = "overvi
             ACCOUNT
           </div>
           <button
-            onClick={onClose}
+            onClick={() => { onClose(); router.push("/startups/login"); }}
             onMouseEnter={() => setHovered("logout")}
             onMouseLeave={() => setHovered(null)}
             style={{
