@@ -14,6 +14,8 @@ import {
   TbX, TbEye, TbShare, TbTrash, TbCheck,
 } from "react-icons/tb";
 import { FONT, PageShell, cardBase } from "./shared";
+import { useApi } from "@/lib/hooks";
+import { getDueDiligenceList, getDueDiligenceReport } from "@/services/investors";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type TabKey = "summary" | "financials" | "risk" | "legal" | "governance" | "documents" | "aaoifi";
@@ -1222,6 +1224,20 @@ export default function DueDiligenceContent() {
   const [activeTab, setActiveTab] = useState<TabKey>("summary");
   const tabBarRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+
+  // ── Fetch due diligence data from API ──
+  const { data: ddList } = useApi(
+    (token) => getDueDiligenceList(token) as Promise<unknown[]>
+  );
+
+  // Pick first startup from the list for the detail view
+  const firstStartupId = ddList && ddList.length > 0
+    ? (ddList[0] as Record<string, unknown>).startup_id as number ?? (ddList[0] as Record<string, unknown>).id as number
+    : null;
+
+  const { data: ddReport } = useApi(
+    firstStartupId ? (token) => getDueDiligenceReport(token, firstStartupId) as Promise<Record<string, unknown>> : null
+  );
 
   // ── Toast state ──
   const [toast, setToast] = useState<string | null>(null);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback } from "react";
 import Image from "next/image";
 import p1 from "../public/assets/p1.jpg";
 import p2 from "../public/assets/p2.png";
@@ -11,6 +11,7 @@ import {
   TbCube, TbBuildingSkyscraper, TbHeart, TbHeartFilled,
   TbBrain, TbShoppingCart, TbMapPin, TbStarFilled,
 } from "react-icons/tb";
+import { searchHome } from "@/services/search";
 
 const FONT = "'URWGeometric', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
 const F: React.CSSProperties = { fontFamily: FONT };
@@ -158,6 +159,25 @@ function BadgePill({ icon, iconBg, label, tailSide }: { icon: React.ReactNode; i
 function HeroSection() {
   const [val, setVal]     = useState("");
   const [focused, setFoc] = useState(false);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [suggestions, setSuggestions] = useState<{ startups?: { id: number; name: string }[]; investors?: { name: string }[] } | null>(null);
+
+  const handleSearchChange = useCallback((v: string) => {
+    setVal(v);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    if (v.trim().length >= 2) {
+      searchTimer.current = setTimeout(async () => {
+        try {
+          const res = await searchHome(v.trim()) as { startups?: { id: number; name: string }[]; investors?: { name: string }[] };
+          setSuggestions(res);
+        } catch {
+          setSuggestions(null);
+        }
+      }, 400);
+    } else {
+      setSuggestions(null);
+    }
+  }, []);
   return (
     <section style={{ background: "#fff", ...F, userSelect: "none" }}>
       <div style={{ padding: "12px 20px 28px" }}>
@@ -173,13 +193,27 @@ function HeroSection() {
             <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(21,40,154,0.05)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
               <TbSearch size={14} color="#15289A" strokeWidth={1.5} />
             </div>
-            <input id="hs" type="text" value={val} onChange={e => setVal(e.target.value)} onFocus={() => setFoc(true)} onBlur={() => setFoc(false)} placeholder="Search startups, tokens, or investors..."
+            <input id="hs" type="text" value={val} onChange={e => handleSearchChange(e.target.value)} onFocus={() => setFoc(true)} onBlur={() => setTimeout(() => setFoc(false), 200)} placeholder="Search startups, tokens, or investors..."
               style={{ flex: 1, fontSize: 14, color: "#0a0e28", background: "transparent", border: "none", outline: "none", fontFamily: "inherit", letterSpacing: "-0.01em" }} />
             {val
-              ? <button onClick={e => { e.stopPropagation(); setVal(""); }} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 20, height: 20, borderRadius: "50%", background: "rgba(0,0,0,0.08)", border: "none", cursor: "pointer", flexShrink: 0 }}><TbX size={11} color="#555" strokeWidth={2} /></button>
+              ? <button onClick={e => { e.stopPropagation(); handleSearchChange(""); }} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 20, height: 20, borderRadius: "50%", background: "rgba(0,0,0,0.08)", border: "none", cursor: "pointer", flexShrink: 0 }}><TbX size={11} color="#555" strokeWidth={2} /></button>
               : !focused && <div style={{ display: "flex", gap: 3, flexShrink: 0 }}>{[0,1,2].map(i => <div key={i} style={{ width: 4, height: 4, borderRadius: "50%", background: "rgba(0,0,0,0.18)" }} />)}</div>
             }
           </div>
+          {suggestions && (suggestions.startups?.length || suggestions.investors?.length) ? (
+            <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 30, background: "#fff", borderRadius: 12, marginTop: 6, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", border: "1px solid #e5e7eb", overflow: "hidden" }}>
+              {suggestions.startups?.map(s => (
+                <div key={s.id} style={{ padding: "10px 16px", fontSize: 14, color: "#111827", cursor: "pointer", borderBottom: "1px solid #f3f4f6", fontFamily: FONT }} onMouseDown={() => { /* navigate to startup */ }}>
+                  🚀 {s.name}
+                </div>
+              ))}
+              {suggestions.investors?.map((inv, i) => (
+                <div key={i} style={{ padding: "10px 16px", fontSize: 14, color: "#111827", cursor: "pointer", borderBottom: "1px solid #f3f4f6", fontFamily: FONT }} onMouseDown={() => { /* navigate to investor */ }}>
+                  💼 {inv.name}
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginTop: 10, gap: 10 }}>
           <BadgePill icon={<TbTrendingUp size={11} color="#3b6ef8" strokeWidth={2.5} />}  iconBg="rgba(59,110,248,0.1)"  label="500+ Active Investors" tailSide="left" />

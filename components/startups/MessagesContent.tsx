@@ -11,6 +11,13 @@ import {
   TbCalendar, TbClock,
 } from "react-icons/tb";
 import { FONT, PageShell, cardBase } from "./shared";
+import { useAuth } from "@/lib/auth-context";
+import {
+  getStartupConversations,
+  getStartupConversation,
+  sendStartupMessage,
+  markStartupConversationRead,
+} from "@/services/messaging";
 import p1 from "@/public/assets/person.png";
 import p2 from "@/public/assets/person.png";
 
@@ -71,6 +78,7 @@ const CONTACT_INFO = {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function MessagesContent() {
+  const { getToken } = useAuth();
   const [view, setView] = useState<View>("list");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -78,6 +86,20 @@ export default function MessagesContent() {
   const [messages, setMessages] = useState<ChatMessage[]>(CHAT_MESSAGES);
   const [showConversations, setShowConversations] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Fetch conversations from API on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const token = await getToken();
+        if (!token) return;
+        await getStartupConversations(token);
+        // API data can be used to replace CONVERSATIONS when available
+      } catch {
+        // Fallback to mock data
+      }
+    })();
+  }, [getToken]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -94,13 +116,31 @@ export default function MessagesContent() {
   function handleSelectConversation(id: string) {
     setSelectedId(id);
     setView("chat");
+    // Fetch conversation messages + mark as read via API
+    (async () => {
+      try {
+        const token = await getToken();
+        if (!token) return;
+        const data = await getStartupConversation(token, Number(id)) as { messages?: { id: number; sender: string; body: string; created_at: string }[] };
+        if (data?.messages && Array.isArray(data.messages)) {
+          setMessages(data.messages.map((m) => ({
+            id: String(m.id),
+            sender: m.sender === "startup" ? "me" as const : "them" as const,
+            text: m.body,
+            time: new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            read: true,
+          })));
+        }
+        await markStartupConversationRead(token, Number(id));
+      } catch { /* fallback to mock messages */ }
+    })();
   }
 
   function handleStartNewConversation() {
     setShowConversations(true);
   }
 
-  function handleSendMessage() {
+  async function handleSendMessage() {
     if (!messageText.trim()) return;
     const newMsg: ChatMessage = {
       id: String(messages.length + 1),
@@ -110,7 +150,16 @@ export default function MessagesContent() {
       read: false,
     };
     setMessages(prev => [...prev, newMsg]);
+    const msgText = messageText.trim();
     setMessageText("");
+
+    // Send via API
+    try {
+      const token = await getToken();
+      if (token && selectedId) {
+        await sendStartupMessage(token, Number(selectedId), msgText);
+      }
+    } catch { /* message shown locally even if API fails */ }
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {

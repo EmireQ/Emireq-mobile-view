@@ -11,6 +11,9 @@ import {
   TbUser, TbAlertTriangle, TbTrendingUp, TbFileCheck,
   TbChartLine, TbShieldCheck, TbCar,
 } from "react-icons/tb";
+import { useAuth } from "@/lib/auth-context";
+import { ApiError } from "@/lib/api";
+import { submitInvestorOnboardingStep, getInvestorOnboardingStatus } from "@/services/investors";
 
 const SparkleIcon = () => (
   <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -143,10 +146,11 @@ const CARD_CONFIG: Record<number, { title: string; subtitle: string }> = {
 
 interface UploadedDoc {
   name: string;
+  file: File;
   category: "id" | "accreditation" | "funds";
 }
 
-interface FormData {
+interface OnboardingFormData {
   username: string;
   email: string;
   password: string;
@@ -268,6 +272,7 @@ function SelectField({
 
 export default function InvestorSignupFlow() {
   const router = useRouter();
+  const { investorRegister, investorLogin, getToken } = useAuth();
   const idFileRef = useRef<HTMLInputElement>(null);
   const accreditationFileRef = useRef<HTMLInputElement>(null);
   const fundsFileRef = useRef<HTMLInputElement>(null);
@@ -277,10 +282,12 @@ export default function InvestorSignupFlow() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Set<number>>(new Set([0, 1, 2, 3, 4]));
+  const [apiError, setApiError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [documents, setDocuments] = useState<UploadedDoc[]>([]);
 
-  const [formData, setFormData] = useState<FormData>({
+  const [formData, setFormData] = useState<OnboardingFormData>({
     username: "",
     email: "",
     password: "",
@@ -298,7 +305,7 @@ export default function InvestorSignupFlow() {
     sectors: [],
   });
 
-  const update = useCallback((field: keyof FormData, value: string | string[] | boolean) => {
+  const update = useCallback((field: keyof OnboardingFormData, value: string | string[] | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   }, []);
 
@@ -309,19 +316,102 @@ export default function InvestorSignupFlow() {
     });
   }, []);
 
-  const handleRegister = () => {
-    setView("onboarding");
-    setStep(1);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+  const handleRegister = async () => {
+    setApiError(null);
+    setIsSubmitting(true);
+    try {
+      await investorRegister({
+        username: formData.username,
+        email: formData.email,
+        password: formData.password,
+        password_confirmation: formData.confirmPassword,
+      });
+      // Auto-login after registration
+      await investorLogin(formData.email, formData.password);
+
+      // getToken() may return null because React state hasn't re-rendered yet
+      // Read directly from localStorage as fallback
+      const token = await getToken() || localStorage.getItem("emireq_investor_token");
+      if (token) {
+        try {
+          const status = await getInvestorOnboardingStatus(token);
+          if (status.completed) {
+            router.push("/investors");
+            return;
+          }
+          setStep(status.current_step || 1);
+        } catch {
+          setStep(1);
+        }
+      } else {
+        setStep(1);
+      }
+      setView("onboarding");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (err) {
+      if (err instanceof ApiError) {
+        const errors = err.data.errors as Record<string, string[]> | undefined;
+        if (errors) {
+          const firstError = Object.values(errors).flat()[0];
+          setApiError(firstError || "Registration failed.");
+        } else {
+          setApiError(String(err.data.message || "Registration failed. Please try again."));
+        }
+      } else {
+        setApiError("Something went wrong. Please try again.");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleContinue = () => {
-    if (step < TOTAL_STEPS) {
-      setStep(step + 1);
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    } else {
-      setView("submitted");
-      window.scrollTo({ top: 0, behavior: "smooth" });
+  const handleContinue = async () => {
+    setApiError(null);
+    setIsSubmitting(true);
+    try {
+      const token = await getToken() || localStorage.getItem("emireq_investor_token");
+      if (token && step <= TOTAL_STEPS) {
+        const stepData = getStepData(step);
+        await submitInvestorOnboardingStep(token, step, stepData);
+      }
+      if (step < TOTAL_STEPS) {
+        setStep(step + 1);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      } else {
+        setView("submitted");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setApiError(String(err.data.message || "Failed to save. Please try again."));
+      } else {
+        setApiError("Something went wrong. Please try again.");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const getStepData = (s: number): Record<string, unknown> | FormData => {
+    switch (s) {
+      case 1: return { action: "confirm", full_name: formData.fullName, country: formData.country };
+      case 2: return { action: "confirm", contact_email: formData.contactEmail, mobile_number: formData.mobileNumber };
+      case 3: return { action: "confirm", investor_types: formData.investorTypes };
+      case 4: return { action: "confirm", shariah_confirmed: formData.shariahConfirmed };
+      case 5: return { action: "confirm", investment_goals: formData.investmentGoals, time_horizon: formData.timeHorizon };
+      case 6: return { action: "confirm", investment_stages: formData.investmentStages, other_stages: formData.otherStages };
+      case 7: return { action: "confirm", sectors: formData.sectors };
+      case 8: {
+        // Upload documents as multipart/form-data
+        const fd = new FormData();
+        fd.append("action", "confirm");
+        for (const doc of documents) {
+          fd.append(doc.category, doc.file);
+        }
+        return fd;
+      }
+      case 9: return { action: "confirm" }; // Review step
+      default: return { action: "confirm" };
     }
   };
 
@@ -338,7 +428,7 @@ export default function InvestorSignupFlow() {
   const addDocument = (file: File, category: UploadedDoc["category"]) => {
     setDocuments((prev) => {
       const filtered = prev.filter((d) => d.category !== category);
-      return [...filtered, { name: file.name, category }];
+      return [...filtered, { name: file.name, file, category }];
     });
   };
 
@@ -472,15 +562,21 @@ export default function InvestorSignupFlow() {
 
   const renderNavButtons = (continueLabel = "Continue") => (
     <div style={{ marginTop: 24 }}>
+      {apiError && (
+        <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 13, color: "#dc2626", fontFamily: FONT }}>
+          {apiError}
+        </div>
+      )}
       <button
         onClick={handleContinue}
-        style={btnYellow}
-        onMouseEnter={(e) => (e.currentTarget.style.background = YELLOW_HOVER)}
+        disabled={isSubmitting}
+        style={{ ...btnYellow, opacity: isSubmitting ? 0.6 : 1, cursor: isSubmitting ? "not-allowed" : "pointer" }}
+        onMouseEnter={(e) => { if (!isSubmitting) e.currentTarget.style.background = YELLOW_HOVER; }}
         onMouseLeave={(e) => (e.currentTarget.style.background = YELLOW)}
-        onMouseDown={(e) => (e.currentTarget.style.transform = "scale(0.98)")}
+        onMouseDown={(e) => { if (!isSubmitting) e.currentTarget.style.transform = "scale(0.98)"; }}
         onMouseUp={(e) => (e.currentTarget.style.transform = "scale(1)")}
       >
-        {continueLabel}
+        {isSubmitting ? "Saving..." : continueLabel}
       </button>
       <button
         onClick={handleBack}
@@ -595,15 +691,22 @@ export default function InvestorSignupFlow() {
           </div>
         </FieldGroup>
 
+        {apiError && (
+          <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: "10px 14px", marginTop: 8, fontSize: 13, color: "#dc2626", fontFamily: FONT }}>
+            {apiError}
+          </div>
+        )}
+
         <button
           onClick={handleRegister}
-          style={{ ...btnYellow, marginTop: 8 }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = YELLOW_HOVER)}
+          disabled={isSubmitting}
+          style={{ ...btnYellow, marginTop: 8, opacity: isSubmitting ? 0.6 : 1, cursor: isSubmitting ? "not-allowed" : "pointer" }}
+          onMouseEnter={(e) => { if (!isSubmitting) e.currentTarget.style.background = YELLOW_HOVER; }}
           onMouseLeave={(e) => (e.currentTarget.style.background = YELLOW)}
-          onMouseDown={(e) => (e.currentTarget.style.transform = "scale(0.98)")}
+          onMouseDown={(e) => { if (!isSubmitting) e.currentTarget.style.transform = "scale(0.98)"; }}
           onMouseUp={(e) => (e.currentTarget.style.transform = "scale(1)")}
         >
-          Create an Account
+          {isSubmitting ? "Creating Account..." : "Create an Account"}
         </button>
 
         {/* Already have an account */}

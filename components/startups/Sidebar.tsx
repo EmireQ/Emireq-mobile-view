@@ -10,6 +10,7 @@ import {
 } from "react-icons/tb";
 import logo1 from "@/public/assets/logo1.png";
 import { FONT } from "./shared";
+import { useAuth } from "@/lib/auth-context";
 
 const NAV_GROUPS = [
   {
@@ -61,6 +62,7 @@ export default function StartupsSidebar({ open, onClose, defaultActive = "overvi
   const [active, setActive] = useState(defaultActive);
   const [hovered, setHovered] = useState<string | null>(null);
   const router = useRouter();
+  const { logout } = useAuth();
 
   function handleItem(key: string) {
     setActive(key);
@@ -68,6 +70,11 @@ export default function StartupsSidebar({ open, onClose, defaultActive = "overvi
       router.push(ROUTES[key]);
     }
     setTimeout(onClose, 160);
+  }
+
+  async function handleLogout() {
+    await logout();
+    router.push("/startups/login");
   }
 
   return (
@@ -195,7 +202,7 @@ export default function StartupsSidebar({ open, onClose, defaultActive = "overvi
             ACCOUNT
           </div>
           <button
-            onClick={() => { onClose(); router.push("/startups/login"); }}
+            onClick={() => { onClose(); handleLogout(); }}
             onMouseEnter={() => setHovered("logout")}
             onMouseLeave={() => setHovered(null)}
             style={{

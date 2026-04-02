@@ -8,6 +8,8 @@ import {
 } from "react-icons/tb";
 import { FcGoogle } from "react-icons/fc";
 import { FaLinkedinIn } from "react-icons/fa";
+import { useAuth } from "@/lib/auth-context";
+import { ApiError } from "@/lib/api";
 
 import logologin from "@/public/assets/logologin.png";
 import backgroundlogin from "@/public/assets/backgroundlogin.png";
@@ -78,6 +80,7 @@ const labelStyle: React.CSSProperties = {
 
 export default function InvestorLogin() {
   const router = useRouter();
+  const { investorLogin } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -95,19 +98,22 @@ export default function InvestorLogin() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (!validate()) return;
     setIsLoading(true);
-    // Simulate login
-    setTimeout(() => {
-      setIsLoading(false);
-      // Demo: "demo" / "demo123" succeeds, otherwise error
-      if (username === "demo" && password === "demo123") {
-        setShowSuccess(true);
+    try {
+      await investorLogin(username, password);
+      setShowSuccess(true);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        const msg = err.data.message || err.data.non_field_errors || "Invalid credentials. Please try again.";
+        setErrors({ general: Array.isArray(msg) ? msg[0] : String(msg) });
       } else {
-        setErrors({ general: "Invalid username or password. Please try again." });
+        setErrors({ general: "Something went wrong. Please try again." });
       }
-    }, 800);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

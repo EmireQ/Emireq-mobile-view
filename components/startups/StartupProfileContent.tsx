@@ -11,6 +11,9 @@ import {
   TbChevronRight,
 } from "react-icons/tb";
 import { FONT, PageShell, cardBase } from "./shared";
+import { useApi } from "@/lib/hooks";
+import { useAuth } from "@/lib/auth-context";
+import { getStartupProfile, updateStartupProfile, startupEnrichPreview, startupEnrichApply } from "@/services/startups";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -84,7 +87,17 @@ export default function StartupProfileContent() {
   const [activeTab, setActiveTab] = useState<Tab>("Company Information");
   const tabContainerRef = useRef<HTMLDivElement>(null);
 
-  const [company] = useState<CompanyInfo>({
+  // Fetch profile from API
+  const { data: profileApi, refetch: refetchProfile } = useApi(
+    (token) => getStartupProfile(token) as Promise<Record<string, unknown>>
+  );
+
+  const { getToken } = useAuth();
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [enriching, setEnriching] = useState(false);
+
+  const [company, setCompany] = useState<CompanyInfo>({
     startupName: "ABC Inc",
     foundedYear: "2025",
     stage: "Idea",
@@ -95,12 +108,12 @@ export default function StartupProfileContent() {
     keyDifferentiator: "Unique Advantages",
   });
 
-  const [vision] = useState<VisionInfo>({
+  const [vision, setVision] = useState<VisionInfo>({
     shortTermVision: "Onboarding as much customers",
     longTermVision: "Getting Acquired",
   });
 
-  const [founders] = useState<FoundersInfo>({
+  const [founders, setFounders] = useState<FoundersInfo>({
     foundersList: "ABC Founder 1, ABC Founder 2",
     professionalBackgrounds: "From ABC University",
     originStory: "Story",
@@ -109,11 +122,92 @@ export default function StartupProfileContent() {
     keyStrengths: "ABC Team\u2019s Founder\u2019s Strength",
   });
 
-  const [contact] = useState<ContactInfo>({
+  const [contact, setContact] = useState<ContactInfo>({
     email: "abc@abc.com",
     website: "www.abc.com",
     location: "San Francisco, CA",
   });
+
+  // Populate from API when data arrives
+  useEffect(() => {
+    if (!profileApi) return;
+    const p = profileApi;
+    setCompany((prev) => ({
+      startupName: String(p.company_name || prev.startupName),
+      foundedYear: String(p.founded_date || p.founded_year || prev.foundedYear),
+      stage: String(p.company_stage || prev.stage),
+      fundingTarget: p.amount_raising ? `$${Number(p.amount_raising).toLocaleString()}` : prev.fundingTarget,
+      problemStatement: String(p.problem_solving || prev.problemStatement),
+      productDescription: String(p.business_description || prev.productDescription),
+      targetCustomers: String(p.target_market || prev.targetCustomers),
+      keyDifferentiator: String(p.key_differentiator || prev.keyDifferentiator),
+    }));
+    if (p.short_term_vision || p.long_term_vision) {
+      setVision((prev) => ({
+        shortTermVision: String(p.short_term_vision || prev.shortTermVision),
+        longTermVision: String(p.long_term_vision || prev.longTermVision),
+      }));
+    }
+    const founder = p.primary_founder as Record<string, unknown> | undefined;
+    if (founder) {
+      setFounders((prev) => ({
+        ...prev,
+        foundersList: String(founder.full_name || prev.foundersList),
+      }));
+    }
+    setContact((prev) => ({
+      email: String((p.primary_founder as Record<string, unknown>)?.email || p.email || prev.email),
+      website: String(p.website || prev.website),
+      location: String(p.country || prev.location),
+    }));
+  }, [profileApi]);
+
+  const handleSaveProfile = async () => {
+    setSaving(true);
+    try {
+      const token = await getToken();
+      if (!token) return;
+      await updateStartupProfile(token, {
+        company_name: company.startupName,
+        company_stage: company.stage,
+        problem_solving: company.problemStatement,
+        business_description: company.productDescription,
+        target_market: company.targetCustomers,
+        website: contact.website,
+        country: contact.location,
+        primary_founder: { full_name: founders.foundersList, email: contact.email },
+      });
+      setEditing(false);
+      refetchProfile();
+    } catch {
+      // keep editing state on error
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleEnrich = async () => {
+    setEnriching(true);
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const preview = await startupEnrichPreview(token, {
+        company_name: company.startupName,
+        domain: contact.website.replace(/^https?:\/\//, ""),
+        country: contact.location,
+      }) as Record<string, unknown>;
+      // Apply the enriched data
+      const profile = preview.profile as Record<string, unknown> | undefined;
+      if (profile) {
+        await startupEnrichApply(token, { profile });
+        refetchProfile();
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setEnriching(false);
+    }
+  };
 
   // scroll active tab into view
   useEffect(() => {
@@ -212,23 +306,61 @@ export default function StartupProfileContent() {
             </div>
           </div>
 
-          {/* Edit Profile button */}
-          <button style={{
-            display: "inline-flex", alignItems: "center", gap: 8,
-            padding: "10px 22px", borderRadius: 12,
-            border: "1px solid #e5e7eb", background: "#fff",
-            fontSize: 14, fontWeight: 500, color: "#374151",
-            cursor: "pointer",
-            transition: "background 0.15s, box-shadow 0.15s",
-            fontFamily: FONT,
-            WebkitTapHighlightColor: "transparent",
-          }}
-            onMouseEnter={e => { e.currentTarget.style.background = "#f9fafb"; e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.06)"; }}
-            onMouseLeave={e => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.boxShadow = "none"; }}
-          >
-            <TbPencil size={16} color="#374151" strokeWidth={2} />
-            Edit Profile
-          </button>
+          {/* Edit / Save / Enrich buttons */}
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            {editing ? (
+              <button
+                onClick={handleSaveProfile}
+                disabled={saving}
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 8,
+                  padding: "10px 22px", borderRadius: 12,
+                  border: "none", background: "#2563eb",
+                  fontSize: 14, fontWeight: 500, color: "#fff",
+                  cursor: saving ? "default" : "pointer",
+                  opacity: saving ? 0.7 : 1,
+                  fontFamily: FONT,
+                }}
+              >
+                {saving ? "Saving…" : "Save Profile"}
+              </button>
+            ) : (
+              <button
+                onClick={() => setEditing(true)}
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 8,
+                  padding: "10px 22px", borderRadius: 12,
+                  border: "1px solid #e5e7eb", background: "#fff",
+                  fontSize: 14, fontWeight: 500, color: "#374151",
+                  cursor: "pointer",
+                  transition: "background 0.15s, box-shadow 0.15s",
+                  fontFamily: FONT,
+                  WebkitTapHighlightColor: "transparent",
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = "#f9fafb"; e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.06)"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.boxShadow = "none"; }}
+              >
+                <TbPencil size={16} color="#374151" strokeWidth={2} />
+                Edit Profile
+              </button>
+            )}
+            <button
+              onClick={handleEnrich}
+              disabled={enriching}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 8,
+                padding: "10px 18px", borderRadius: 12,
+                border: "1px solid #e0e7ff",
+                background: enriching ? "#f0f0ff" : "#eef2ff",
+                color: "#4338ca",
+                fontSize: 13, fontWeight: 600, fontFamily: FONT,
+                cursor: enriching ? "default" : "pointer",
+                opacity: enriching ? 0.7 : 1,
+              }}
+            >
+              {enriching ? "Enriching…" : "✨ AI Enrich"}
+            </button>
+          </div>
         </div>
 
         {/* ── Tabs ── */}

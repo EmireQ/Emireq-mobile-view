@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   PieChart, Pie, Cell, ResponsiveContainer,
 } from "recharts";
@@ -12,6 +12,9 @@ import {
   TbDotsVertical, TbSparkles, TbInfoCircle,
 } from "react-icons/tb";
 import { FONT, InfoIcon, PageShell, cardBase } from "./shared";
+import { useApi } from "@/lib/hooks";
+import { useAuth } from "@/lib/auth-context";
+import { getStartupDocuments, uploadStartupDocument, deleteStartupDocument } from "@/services/startups";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -243,6 +246,31 @@ export default function DocumentsComplianceContent() {
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+
+  const { getToken } = useAuth();
+
+  // Fetch documents from API
+  const { data: apiDocs, refetch: refetchDocs } = useApi(
+    (token) => getStartupDocuments(token) as Promise<unknown[]>
+  );
+
+  const handleUploadDocument = async (file: File, documentType: string, title: string) => {
+    const token = await getToken();
+    if (!token) return;
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("document_type", documentType);
+    fd.append("title", title);
+    await uploadStartupDocument(token, fd);
+    refetchDocs();
+  };
+
+  const handleDeleteDocument = async (documentId: number) => {
+    const token = await getToken();
+    if (!token) return;
+    await deleteStartupDocument(token, documentId);
+    refetchDocs();
+  };
 
   const filteredRecords = ALL_RECORDS.filter(rec => {
     const matchesSearch = rec.name.toLowerCase().includes(searchQuery.toLowerCase()) ||

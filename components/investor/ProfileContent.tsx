@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   TbPencil, TbDeviceFloppy, TbCheck, TbAlertCircle,
@@ -8,6 +8,9 @@ import {
   TbChevronRight, TbBuilding, TbCircleCheck, TbShieldCheck,
 } from "react-icons/tb";
 import { FONT, PageShell } from "./shared";
+import { useApi } from "@/lib/hooks";
+import { useAuth } from "@/lib/auth-context";
+import { getInvestorProfile, investorEnrichPreview } from "@/services/investors";
 
 const TABS = ["Overview", "Investor Profile", "Financials", "Interests"] as const;
 type Tab = (typeof TABS)[number];
@@ -257,6 +260,11 @@ export default function ProfileContent() {
   const [activeTab, setActiveTab] = useState<Tab>("Overview");
   const router = useRouter();
 
+  // Fetch profile from API
+  const { data: profileApi, loading: profileLoading } = useApi(
+    (token) => getInvestorProfile(token) as Promise<Record<string, unknown>>
+  );
+
   // Edit toggles
   const [editPersonal, setEditPersonal] = useState(false);
   const [editLocation, setEditLocation] = useState(false);
@@ -272,6 +280,26 @@ export default function ProfileContent() {
     country: "UK",
     city: "London",
   });
+
+  // Populate from API when data arrives
+  useEffect(() => {
+    if (profileApi) {
+      const p = profileApi as Record<string, unknown>;
+      setPersonalInfo((prev) => ({
+        fullName: String(p.full_name || p.fullName || prev.fullName),
+        username: String(p.username || prev.username),
+        email: String(p.email || prev.email),
+        mobile: String(p.mobile_number || p.mobile || prev.mobile),
+        country: String(p.country || prev.country),
+        city: String(p.city || prev.city),
+      }));
+      if (p.investor_type) setInvestorType(String(p.investor_type));
+      if (p.organization) setOrganization(String(p.organization));
+      if (p.investment_goal) setInvestmentGoal(String(p.investment_goal));
+      if (Array.isArray(p.investment_stages)) setSelectedStages(p.investment_stages as string[]);
+      if (Array.isArray(p.sectors)) setSectors(p.sectors as string[]);
+    }
+  }, [profileApi]);
 
   // Location state
   const [locationInfo, setLocationInfo] = useState({
@@ -289,6 +317,35 @@ export default function ProfileContent() {
   // Financial state
   const [totalFunds, setTotalFunds] = useState("$6,000,000");
   const [totalInvested, setTotalInvested] = useState("$1,900,000");
+
+  // ── AI Enrich ──
+  const [enriching, setEnriching] = useState(false);
+  const { getToken } = useAuth();
+
+  const handleEnrichProfile = async () => {
+    setEnriching(true);
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const result = await investorEnrichPreview(token, {
+        full_name: personalInfo.fullName,
+        country: personalInfo.country,
+        investor_type: investorType,
+        ai_linkedin: locationInfo.linkedin !== "N/A" ? locationInfo.linkedin : undefined,
+      }) as Record<string, unknown>;
+      // Apply enriched data where available
+      if (result.full_name) setPersonalInfo((p) => ({ ...p, fullName: String(result.full_name) }));
+      if (result.country) setPersonalInfo((p) => ({ ...p, country: String(result.country) }));
+      if (result.investor_type) setInvestorType(String(result.investor_type));
+      if (result.organization) setOrganization(String(result.organization));
+      if (result.investment_goal) setInvestmentGoal(String(result.investment_goal));
+      if (result.linkedin) setLocationInfo((l) => ({ ...l, linkedin: String(result.linkedin) }));
+    } catch {
+      // silently fail — enrichment is optional
+    } finally {
+      setEnriching(false);
+    }
+  };
 
   // Interests state
   const [sectors, setSectors] = useState<string[]>([]);
@@ -395,6 +452,27 @@ export default function ProfileContent() {
         {/* ═══════════════════ OVERVIEW TAB ═══════════════════ */}
         {activeTab === "Overview" && (
           <>
+            {/* ── AI Enrich Button ── */}
+            <div style={{ padding: "0 0 8px" }}>
+              <button
+                onClick={handleEnrichProfile}
+                disabled={enriching}
+                style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  padding: "10px 18px", borderRadius: 12,
+                  border: "1px solid #e0e7ff",
+                  background: enriching ? "#f0f0ff" : "#eef2ff",
+                  color: "#4338ca",
+                  fontSize: 13, fontWeight: 600, fontFamily: FONT,
+                  cursor: enriching ? "default" : "pointer",
+                  opacity: enriching ? 0.7 : 1,
+                  transition: "all 0.15s",
+                }}
+              >
+                {enriching ? "Enriching…" : "✨ AI Enrich Profile"}
+              </button>
+            </div>
+
             {/* ── Personal Information ── */}
             <div style={cardStyle}>
               <SectionHeader

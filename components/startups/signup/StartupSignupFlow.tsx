@@ -12,6 +12,9 @@ import {
   TbEye, TbEyeOff, TbStarFilled, TbCircleCheck,
 } from "react-icons/tb";
 import { FaLinkedinIn, FaGoogle } from "react-icons/fa";
+import { useAuth } from "@/lib/auth-context";
+import { ApiError } from "@/lib/api";
+import { submitStartupOnboardingStep, getStartupOnboardingStatus } from "@/services/startups";
 import logologin from "@/public/assets/logologin.png";
 import loginbg from "@/public/assets/loginbg.png";
 import logo1 from "@/public/assets/logo1.png";
@@ -464,6 +467,7 @@ function ShariahInfoBox() {
 
 export default function StartupSignupFlow() {
   const router = useRouter();
+  const { startupRegister, startupLogin, getToken } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [view, setView] = useState<"register" | "onboarding" | "submitted">("register");
@@ -473,6 +477,8 @@ export default function StartupSignupFlow() {
   const [expandedSections, setExpandedSections] = useState<Set<number>>(new Set([0, 1, 2, 3, 4, 5]));
   const [coFounders, setCoFounders] = useState<CoFounder[]>([{ name: "", role: "", email: "" }]);
   const [dragActive, setDragActive] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [formData, setFormData] = useState<FormData>({
     username: "",
@@ -517,18 +523,120 @@ export default function StartupSignupFlow() {
     });
   }, []);
 
-  const handleRegister = () => {
-    setView("onboarding");
-    setStep(1);
+  const handleRegister = async () => {
+    setApiError(null);
+    setIsSubmitting(true);
+    try {
+      await startupRegister({
+        username: formData.username,
+        email: formData.email,
+        password: formData.password,
+        password_confirmation: formData.password,
+      });
+      // Auto-login after registration
+      await startupLogin(formData.email, formData.password);
+
+      // Check onboarding status to resume at correct step
+      const token = await getToken();
+      if (token) {
+        try {
+          const status = await getStartupOnboardingStatus(token);
+          if (status.completed) {
+            router.push("/startups");
+            return;
+          }
+          setStep(status.current_step || 1);
+        } catch {
+          setStep(1);
+        }
+      } else {
+        setStep(1);
+      }
+      setView("onboarding");
+    } catch (err) {
+      if (err instanceof ApiError) {
+        const errors = err.data.errors as Record<string, string[]> | undefined;
+        if (errors) {
+          const firstError = Object.values(errors).flat()[0];
+          setApiError(firstError || "Registration failed.");
+        } else {
+          setApiError(String(err.data.message || "Registration failed. Please try again."));
+        }
+      } else {
+        setApiError("Something went wrong. Please try again.");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleContinue = () => {
-    if (step < 8) {
-      setStep(step + 1);
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    } else {
-      setView("submitted");
-      window.scrollTo({ top: 0, behavior: "smooth" });
+  const handleContinue = async () => {
+    setApiError(null);
+    setIsSubmitting(true);
+    try {
+      const token = await getToken();
+      if (token && step <= 8) {
+        const stepData = getStartupStepData(step);
+        await submitStartupOnboardingStep(token, step, stepData);
+      }
+      if (step < 8) {
+        setStep(step + 1);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      } else {
+        setView("submitted");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setApiError(String(err.data.message || "Failed to save. Please try again."));
+      } else {
+        setApiError("Something went wrong. Please try again.");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const getStartupStepData = (s: number): Record<string, unknown> => {
+    switch (s) {
+      case 1: return {
+        company_name: formData.companyName, industry: formData.industry,
+        founded_date: formData.foundedDate, website: formData.website,
+        registration_number: formData.registrationNumber, country: formData.country,
+      };
+      case 2: return {
+        company_stage: formData.companyStage, company_type: formData.companyType,
+        team_size: formData.teamSize,
+      };
+      case 3: return {
+        primary_founder: {
+          full_name: formData.founderName, role: formData.founderRole,
+          email: formData.founderEmail, linkedin_profile: formData.founderLinkedin,
+        },
+        cofounders: coFounders.filter((c) => c.name),
+      };
+      case 4: return {
+        business_description: formData.businessDescription,
+        problem_solving: formData.problemSolving,
+        target_market: formData.targetMarket,
+        revenue_model: formData.revenueModel,
+        current_revenue: formData.currentRevenue,
+        projected_revenue: formData.projectedRevenue,
+      };
+      case 5: return {
+        funding_information: formData.fundingStage,
+        amount_raising: formData.amountRaising ? Number(formData.amountRaising) : undefined,
+        current_funding: formData.currentFunding,
+        fund_usage: formData.fundUsage,
+        previous_investors: formData.previousInvestors,
+      };
+      case 6: return {
+        shariah_compliant: formData.shariahStatus === "yes",
+        compliance_areas: formData.complianceAreas,
+      };
+      case 7: return {}; // Documents uploaded separately
+      case 8: return {}; // Review step
+      default: return {};
     }
   };
 
@@ -671,15 +779,21 @@ export default function StartupSignupFlow() {
 
   const renderNavButtons = (continueLabel = "Continue") => (
     <div style={{ marginTop: 24 }}>
+      {apiError && (
+        <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 13, color: "#dc2626", fontFamily: FONT }}>
+          {apiError}
+        </div>
+      )}
       <button
         onClick={handleContinue}
-        style={btnYellow}
-        onMouseEnter={(e) => (e.currentTarget.style.background = YELLOW_HOVER)}
+        disabled={isSubmitting}
+        style={{ ...btnYellow, opacity: isSubmitting ? 0.6 : 1, cursor: isSubmitting ? "not-allowed" : "pointer" }}
+        onMouseEnter={(e) => { if (!isSubmitting) e.currentTarget.style.background = YELLOW_HOVER; }}
         onMouseLeave={(e) => (e.currentTarget.style.background = YELLOW)}
-        onMouseDown={(e) => (e.currentTarget.style.transform = "scale(0.98)")}
+        onMouseDown={(e) => { if (!isSubmitting) e.currentTarget.style.transform = "scale(0.98)"; }}
         onMouseUp={(e) => (e.currentTarget.style.transform = "scale(1)")}
       >
-        {continueLabel}
+        {isSubmitting ? "Saving..." : continueLabel}
       </button>
       <button
         onClick={handleBack}
@@ -767,15 +881,22 @@ export default function StartupSignupFlow() {
           </div>
         </FieldGroup>
 
+        {apiError && (
+          <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: "10px 14px", marginTop: 8, fontSize: 13, color: "#dc2626", fontFamily: FONT }}>
+            {apiError}
+          </div>
+        )}
+
         <button
           onClick={handleRegister}
-          style={{ ...btnYellow, marginTop: 8 }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = YELLOW_HOVER)}
+          disabled={isSubmitting}
+          style={{ ...btnYellow, marginTop: 8, opacity: isSubmitting ? 0.6 : 1, cursor: isSubmitting ? "not-allowed" : "pointer" }}
+          onMouseEnter={(e) => { if (!isSubmitting) e.currentTarget.style.background = YELLOW_HOVER; }}
           onMouseLeave={(e) => (e.currentTarget.style.background = YELLOW)}
-          onMouseDown={(e) => (e.currentTarget.style.transform = "scale(0.98)")}
+          onMouseDown={(e) => { if (!isSubmitting) e.currentTarget.style.transform = "scale(0.98)"; }}
           onMouseUp={(e) => (e.currentTarget.style.transform = "scale(1)")}
         >
-          Register
+          {isSubmitting ? "Registering..." : "Register"}
         </button>
 
         <p style={{ textAlign: "center", marginTop: 18, fontSize: 14, color: GRAY_500, fontFamily: FONT }}>

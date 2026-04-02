@@ -1,11 +1,13 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import Image from "next/image";
 import cyber from "../public/assets/cyber.png";
 import fin from "../public/assets/fin.png";
 import health from "../public/assets/health.png";
 import { TbSearch, TbAdjustmentsHorizontal, TbMapPin, TbStarFilled, TbCircleCheck, TbTrendingUp, TbX, TbChevronDown, TbArrowRight, TbFileText, TbChartBar, TbClipboard, TbStar, TbUsers } from "react-icons/tb";
+import { search as searchApi } from "@/services/search";
+import { getStartups } from "@/services/startups";
 
 const FONT = "'URWGeometric', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
 const NAVY = "#152B5A";
@@ -223,7 +225,7 @@ const InvestSection = ({ items, onFilterOpen, search, setSearch, focused, setFoc
 
 // ─── FilterPanel ──────────────────────────────────────────────────────────────
 
-const FilterPanel = ({ open, onClose }: { open: boolean; onClose: () => void }) => {
+const FilterPanel = ({ open, onClose, onApply }: { open: boolean; onClose: () => void; onApply: (filters: { industry: string }) => void }) => {
   const [dept, setDept] = useState("Enterprise Software");
   const [companySize, setCompanySize] = useState("All size");
   const [licenseType, setLicenseType] = useState("SaaS (Cloud)");
@@ -273,6 +275,11 @@ const FilterPanel = ({ open, onClose }: { open: boolean; onClose: () => void }) 
             ))}
           </div>
         </div>
+        <div style={{ padding: "0 20px 32px" }}>
+          <button onClick={() => { onApply({ industry: dept }); onClose(); }} style={{ width: "100%", padding: "14px", borderRadius: 12, background: "#3b6ef8", color: "#fff", fontSize: 15, fontWeight: 600, border: "none", cursor: "pointer", fontFamily: FONT }}>
+            Apply Filters
+          </button>
+        </div>
       </div>
     </>
   );
@@ -288,7 +295,50 @@ export default function MarketplaceContent() {
   const [topActive, setTopActive] = useState(0);
   const [category, setCategory] = useState("All Category");
   const [sortBy, setSortBy] = useState("Recently Added");
+  const [searchResults, setSearchResults] = useState<unknown[]>([]);
+  const [apiStartups, setApiStartups] = useState<unknown[]>([]);
+  const [filterIndustry, setFilterIndustry] = useState("");
   const topRef = useRef<HTMLDivElement>(null);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Fetch startup listings on mount
+  useEffect(() => {
+    getStartups()
+      .then((data) => { if (Array.isArray(data)) setApiStartups(data); })
+      .catch(() => {});
+  }, []);
+
+  // Run filtered search via GET /search/ when filters change
+  const runFilteredSearch = useCallback(async (q: string, industry: string, location: string) => {
+    try {
+      const params: { q?: string; type?: string; industry?: string; location?: string } = { type: "startup" };
+      if (q.trim()) params.q = q.trim();
+      if (industry) params.industry = industry;
+      if (location) params.location = location;
+      const res = await searchApi(params) as { results?: unknown[] };
+      setSearchResults(Array.isArray(res?.results) ? res.results : []);
+    } catch {
+      // Keep using local data on error
+    }
+  }, []);
+
+  // Debounced search
+  const handleSearchChange = useCallback((value: string) => {
+    setSearch(value);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    if (value.trim().length >= 2) {
+      searchTimerRef.current = setTimeout(() => {
+        runFilteredSearch(value, filterIndustry, region);
+      }, 400);
+    } else {
+      setSearchResults([]);
+    }
+  }, [filterIndustry, region, runFilteredSearch]);
+
+  const handleFilterApply = useCallback((filters: { industry: string }) => {
+    setFilterIndustry(filters.industry);
+    runFilteredSearch(search, filters.industry, region);
+  }, [search, region, runFilteredSearch]);
 
   const slideTop = (i: number) => {
     if (!topRef.current) return;
@@ -303,7 +353,7 @@ export default function MarketplaceContent() {
         <p style={{ fontSize: 14, color: "#6b7280", lineHeight: 1.6, margin: 0, fontFamily: FONT }}>Invest in tokenized assets, startups, and real estate—secure and transparent.</p>
       </div>
 
-      <InvestSection items={INVEST_CARDS} onFilterOpen={() => setFilterOpen(true)} search={search} setSearch={setSearch} focused={focused} setFoc={setFoc} />
+      <InvestSection items={INVEST_CARDS} onFilterOpen={() => setFilterOpen(true)} search={search} setSearch={handleSearchChange} focused={focused} setFoc={setFoc} />
 
       {/* Featured Startup */}
       <section style={{ padding: "16px 20px 20px", ...F }}>
@@ -340,7 +390,7 @@ export default function MarketplaceContent() {
           <DropdownSelect value={sortBy} options={SORT_OPTIONS} onChange={setSortBy} />
         </div>
         <div ref={topRef} onScroll={() => { if (!topRef.current) return; setTopActive(Math.round(topRef.current.scrollLeft / topRef.current.clientWidth)); }} style={{ display: "flex", gap: GAP, overflowX: "auto", scrollbarWidth: "none", scrollSnapType: "x mandatory" }}>
-          {TOP_STARTUPS.map(item => (
+          {(apiStartups.length > 0 ? apiStartups.map((s: unknown, i: number) => { const r = s as Record<string, unknown>; return { id: (r.id as number) ?? i, initials: String(r.company_name ?? r.name ?? "").slice(0, 2).toUpperCase(), name: String(r.company_name ?? r.name ?? ""), description: String(r.tagline ?? r.description ?? ""), location: String(r.country ?? r.location ?? ""), industry: String(r.industry ?? ""), funding: r.funding_stage ? String(r.funding_stage) : "", verified: Boolean(r.is_verified), trending: false }; }) : TOP_STARTUPS).map(item => (
             <div key={item.id} style={{ width: "100%", flexShrink: 0, border: "1.5px solid #e5e7eb", borderRadius: 16, padding: 16, scrollSnapAlign: "start", boxSizing: "border-box" }}>
               <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 12 }}>
                 <Initials text={item.initials} />
@@ -362,7 +412,7 @@ export default function MarketplaceContent() {
           ))}
         </div>
         <div style={{ display: "flex", justifyContent: "center", gap: 6, marginTop: 14 }}>
-          {TOP_STARTUPS.map((_, i) => <div key={i} onClick={() => slideTop(i)} style={{ width: i === topActive ? 24 : 8, height: 8, borderRadius: 4, background: i === topActive ? "#FFC300" : "#e5e7eb", cursor: "pointer", transition: "all 0.25s" }} />)}
+          {(apiStartups.length > 0 ? apiStartups : TOP_STARTUPS).map((_, i) => <div key={i} onClick={() => slideTop(i)} style={{ width: i === topActive ? 24 : 8, height: 8, borderRadius: 4, background: i === topActive ? "#FFC300" : "#e5e7eb", cursor: "pointer", transition: "all 0.25s" }} />)}
         </div>
       </section>
 
@@ -390,7 +440,7 @@ export default function MarketplaceContent() {
         </div>
       </section>
 
-      <FilterPanel open={filterOpen} onClose={() => setFilterOpen(false)} />
+      <FilterPanel open={filterOpen} onClose={() => setFilterOpen(false)} onApply={handleFilterApply} />
     </div>
   );
 }

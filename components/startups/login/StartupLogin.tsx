@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { TbEye, TbEyeOff } from "react-icons/tb";
 import { FaLinkedinIn, FaGoogle } from "react-icons/fa";
 import { TbAlertCircle } from "react-icons/tb";
+import { useAuth } from "@/lib/auth-context";
+import { ApiError } from "@/lib/api";
 import logologin from "@/public/assets/logologin.png";
 import loginbg from "@/public/assets/loginbg.png";
 
@@ -24,26 +26,47 @@ const NAVY = "#1E2A4A";
 
 export default function StartupLogin() {
   const router = useRouter();
+  const { startupLogin } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [errors, setErrors] = useState<{ username?: string; password?: string }>({});
+  const [errors, setErrors] = useState<{ username?: string; password?: string; general?: string }>({});
   const [touched, setTouched] = useState<{ username?: boolean; password?: boolean }>({});
+  const [isLoading, setIsLoading] = useState(false);
 
   const validate = () => {
     const errs: { username?: string; password?: string } = {};
-    if (!username.trim()) errs.username = "Username is required";
+    if (!username.trim()) errs.username = "Email is required";
     if (!password) errs.password = "Password is required";
     else if (password.length < 6) errs.password = "Password must be at least 6 characters";
     return errs;
   };
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     const errs = validate();
     setErrors(errs);
     setTouched({ username: true, password: true });
-    if (Object.keys(errs).length === 0) {
+    if (Object.keys(errs).length > 0) return;
+    setIsLoading(true);
+    try {
+      await startupLogin(username, password);
       router.push("/startups");
+    } catch (err) {
+      if (err instanceof ApiError) {
+        const msg = err.data.message || err.data.non_field_errors || "Invalid credentials. Please try again.";
+        setErrors({ general: Array.isArray(msg) ? msg[0] : String(msg) });
+      } else if (err instanceof Error && err.message.includes("auth/")) {
+        const code = err.message;
+        if (code.includes("user-not-found") || code.includes("wrong-password") || code.includes("invalid-credential")) {
+          setErrors({ general: "Invalid email or password." });
+        } else {
+          setErrors({ general: "Authentication failed. Please try again." });
+        }
+      } else {
+        setErrors({ general: "Something went wrong. Please try again." });
+      }
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -146,11 +169,26 @@ export default function StartupLogin() {
             Log in to continue your funding journey.
           </p>
 
-          {/* Username */}
+          {/* General error banner */}
+          {errors.general && (
+            <div style={{
+              display: "flex", alignItems: "center", gap: 10,
+              padding: "12px 16px", borderRadius: 10,
+              background: "#FEE2E2", border: "1px solid #FECACA",
+              marginBottom: 20,
+            }}>
+              <TbAlertCircle size={20} color={RED} style={{ flexShrink: 0 }} />
+              <span style={{ fontSize: 13, color: RED, fontFamily: FONT, fontWeight: 500 }}>
+                {errors.general}
+              </span>
+            </div>
+          )}
+
+          {/* Email */}
           <div style={{ marginBottom: 16 }}>
-            <label style={labelStyle}>Username</label>
+            <label style={labelStyle}>Email</label>
             <input
-              placeholder="username"
+              placeholder="email@example.com"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               onBlur={() => handleBlur("username")}
@@ -201,19 +239,21 @@ export default function StartupLogin() {
           {/* Log In button */}
           <button
             onClick={handleLogin}
+            disabled={isLoading}
             style={{
               width: "100%", padding: "14px", borderRadius: 12,
               border: "none", background: YELLOW, color: "#fff",
               fontSize: 15, fontWeight: 600, fontFamily: FONT,
-              cursor: "pointer", transition: "background 0.2s, transform 0.1s",
+              cursor: isLoading ? "not-allowed" : "pointer", transition: "background 0.2s, transform 0.1s",
               WebkitTapHighlightColor: "transparent",
+              opacity: isLoading ? 0.7 : 1,
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = YELLOW_HOVER)}
-            onMouseLeave={(e) => (e.currentTarget.style.background = YELLOW)}
-            onMouseDown={(e) => (e.currentTarget.style.transform = "scale(0.98)")}
-            onMouseUp={(e) => (e.currentTarget.style.transform = "scale(1)")}
+            onMouseEnter={(e) => { if (!isLoading) e.currentTarget.style.background = YELLOW_HOVER; }}
+            onMouseLeave={(e) => { if (!isLoading) e.currentTarget.style.background = YELLOW; }}
+            onMouseDown={(e) => { if (!isLoading) e.currentTarget.style.transform = "scale(0.98)"; }}
+            onMouseUp={(e) => { if (!isLoading) e.currentTarget.style.transform = "scale(1)"; }}
           >
-            Log In
+            {isLoading ? "Logging in..." : "Log In"}
           </button>
 
           {/* Forget Password */}

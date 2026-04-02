@@ -39,7 +39,7 @@ export default function Navbar() {
           {(["startups", "investors"] as const).map((tab) => {
             const active = activeTab === tab;
             return (
-              <button key={tab} onClick={() => router.push(tab === "investors" ? "/investors" : "/startups/welcome")}
+              <button key={tab} onClick={() => router.push(tab === "investors" ? "/investors/welcome" : "/startups/welcome")}
                 style={{ padding: "9px 20px", borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: "pointer", border: active ? "none" : "1px solid #C1C1C1", background: active ? NAVY : "#fff", color: active ? "#fff" : "#717182", transition: "all 0.18s", letterSpacing: "-0.01em", WebkitTapHighlightColor: "transparent", boxShadow: active ? "0 4px 12px rgba(21,43,90,0.18)" : "none", whiteSpace: "nowrap" }}>
                 {tab.charAt(0).toUpperCase() + tab.slice(1)}
               </button>

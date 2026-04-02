@@ -9,6 +9,7 @@ import {
 } from "react-icons/tb";
 import logo1 from "@/public/assets/logo1.png";
 import { FONT } from "./shared";
+import { useAuth } from "@/lib/auth-context";
 
 const NAV_GROUPS = [
   {
@@ -42,7 +43,7 @@ interface SidebarProps {
 }
 
 const ROUTES: Record<string, string> = {
-  overview: "/investors",
+  overview: "/investors/dashboard",
   profile: "/investors/profile",
   portfolio: "/investors/portfolio",
   token: "/investors/token",
@@ -55,6 +56,7 @@ export default function Sidebar({ open, onClose, defaultActive = "overview" }: S
   const [active, setActive] = useState(defaultActive);
   const [hovered, setHovered] = useState<string | null>(null);
   const router = useRouter();
+  const { logout } = useAuth();
 
   function handleItem(key: string) {
     setActive(key);
@@ -62,6 +64,11 @@ export default function Sidebar({ open, onClose, defaultActive = "overview" }: S
       router.push(ROUTES[key]);
     }
     setTimeout(onClose, 160);
+  }
+
+  async function handleLogout() {
+    await logout();
+    router.push("/investors/login");
   }
 
   return (
@@ -255,6 +262,7 @@ export default function Sidebar({ open, onClose, defaultActive = "overview" }: S
 
           <button
             aria-label="Log out"
+            onClick={handleLogout}
             onMouseEnter={e => {
               e.currentTarget.style.background = "#fef2f2";
               e.currentTarget.style.color = "#ef4444";
